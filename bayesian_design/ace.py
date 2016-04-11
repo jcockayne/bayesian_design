@@ -19,11 +19,20 @@ def deletion(points, loss):
         flags = indices != i
         new_losses[i] = loss(points[flags])
 
-    return new_losses, base_loss
+    return new_losses-base_loss
 
 
 def a_optimality(get_cov):
-    return lambda points: np.sum(np.diag(get_cov(points))**2)
+    def __optim(points):
+        cov = get_cov(points)
+        cov = np.squeeze(cov)
+        if cov.ndim == 1:
+            return np.sum(cov)
+        if cov.ndim == 2:
+            return np.trace(cov)
+        else:
+            raise Exception("No way to compute A-Optimality for {} dimensions!".format(cov.ndim))
+    return __optim
 
 
 def __plot_loss(cur_location, new_location, bounds, emulator, emu_points, other_points):
@@ -78,19 +87,22 @@ def __plot_loss_2d(cur_location, new_location, bounds, emulator, emu_points, oth
     plt.close()
 
 
-def ace(initial_design, k, max_iter, loss_fn, optimizer, debug=False):
+def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, deletion_function=None, debug=False):
     # initial_design should have shape 2; else reshape it
     if len(initial_design.shape) == 1:
         initial_design = initial_design[:,None]
     if len(initial_design.shape) > 2:
         raise Exception("Initial design should be a 2D array, with one row per point and one column per dimension.")
 
+    if deletion_function is None:
+        deletion_function = deletion
     cur_design = initial_design.copy()
     cur_loss = loss_fn(cur_design)
+    n_rejects = 0
     for ix in xrange(max_iter):
-        losses, base_loss = deletion(cur_design, loss_fn)
+        loss_deltas = deletion_function(cur_design, loss_fn)
+        points_to_modify = np.argsort(loss_deltas)[:k]
 
-        points_to_modify = np.argsort(losses-base_loss)[:k]
         for i in points_to_modify:
             cur_point = cur_design[i,:]
             # dump out the point we are modifying
@@ -120,9 +132,13 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, debug=False):
                     print ix, "Moved {} from {} to {} (new loss {:.2e} < {:.2e})".format(i, cur_point, new_point, new_loss, cur_loss)
                 cur_design[i, :] = new_point
                 cur_loss = new_loss
+                n_rejects = 0
             else:
+                n_rejects += 1
                 # no-op
                 if debug > 0:
                     print ix, "Rejected move of {} from {} to {}, (new loss {:.2e} > {:.2e})".format(i, cur_point, new_point, new_loss, cur_loss)
+        if terminate_rejects is not None and n_rejects >= terminate_rejects:
+            break
 
     return cur_design
