@@ -103,6 +103,7 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
         loss_deltas = deletion_function(cur_design, loss_fn)
         points_to_modify = np.argsort(loss_deltas)[:k]
 
+        any_accepts = False
         for i in points_to_modify:
             cur_point = cur_design[i,:]
             # dump out the point we are modifying
@@ -111,11 +112,18 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
 
             # proxy for the loss function, as a function of the point we are modifying
             def __partial_loss(d):
-                tmp_points = np.concatenate((other_points, d.reshape((1, other_points.shape[1]))))
+                #print d.shape
+                d = d.reshape((1, other_points.shape[1]))
+                tmp_points = np.concatenate([other_points, d])
                 return loss_fn(tmp_points)
 
+            # A vectorized version of the above, because optimizers will often ask what is the
+            # objective function value for a vector of different choices of point
             def __partial_loss_vectorized(points):
-                ret = np.array([[__partial_loss(points[i1, :])] for i1 in xrange(points.shape[0])])
+                #print points.shape
+                ret = np.empty((points.shape[0], 1))
+                for i1 in xrange(points.shape[0]):
+                    ret[i1, 0] = __partial_loss(points[i1, :])
                 return ret
 
             # construct the emulator
@@ -132,12 +140,15 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
                     print ix, "Moved {} from {} to {} (new loss {:.2e} < {:.2e})".format(i, cur_point, new_point, new_loss, cur_loss)
                 cur_design[i, :] = new_point
                 cur_loss = new_loss
-                n_rejects = 0
+                any_accepts = True
             else:
-                n_rejects += 1
                 # no-op
                 if debug > 0:
                     print ix, "Rejected move of {} from {} to {}, (new loss {:.2e} > {:.2e})".format(i, cur_point, new_point, new_loss, cur_loss)
+        if not any_accepts:
+            n_rejects += 1
+        else:
+            n_rejects = 0
         if terminate_rejects is not None and n_rejects >= terminate_rejects:
             break
 

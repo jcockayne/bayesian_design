@@ -14,7 +14,7 @@ def gpyopt_optimizer(optimizer_bounds_function, debug=False):
     def __gpyopt_optimizer(function, cur_point, other_points):
         bounds = optimizer_bounds_function(cur_point)
         opt = GPyOpt.methods.BayesianOptimization(function, bounds, X=np.array([cur_point]))
-        opt.run_optimization(verbose=False)
+        opt.run_optimization(verbose=debug)
         if debug:
             import matplotlib.pyplot as plt
             opt.plot_convergence()
