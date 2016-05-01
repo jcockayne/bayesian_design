@@ -1,5 +1,7 @@
+from __future__ import print_function
 __author__ = 'benorn'
 import numpy as np
+import sys
 import inspect
 
 
@@ -27,11 +29,14 @@ def a_optimality(get_cov):
         cov = get_cov(points)
         cov = np.squeeze(cov)
         if cov.ndim == 1:
-            return np.sum(cov)
-        if cov.ndim == 2:
-            return np.trace(cov)
+            ret = np.sum(cov)
+        elif cov.ndim == 2:
+            ret = np.trace(cov)
         else:
             raise Exception("No way to compute A-Optimality for {} dimensions!".format(cov.ndim))
+        if ret < 0:
+            raise Exception('Diagonal of covariance was negative, this should be impossible!')
+        return ret
     return __optim
 
 
@@ -88,9 +93,13 @@ def __plot_loss_2d(cur_location, new_location, bounds, emulator, emu_points, oth
 
 
 def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, deletion_function=None, debug=False):
+    def printer(message, level=0):
+        if debug > level:
+            print(message)
+            sys.stdout.flush()
     # initial_design should have shape 2; else reshape it
     if len(initial_design.shape) == 1:
-        initial_design = initial_design[:,None]
+        initial_design = initial_design[:, None]
     if len(initial_design.shape) > 2:
         raise Exception("Initial design should be a 2D array, with one row per point and one column per dimension.")
 
@@ -101,18 +110,21 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
     n_rejects = 0
     for ix in xrange(max_iter):
         loss_deltas = deletion_function(cur_design, loss_fn)
+        loss_deltas = np.squeeze(loss_deltas)
+        if len(loss_deltas.shape) > 1:
+            raise Exception('Expected a 1D loss delta from deletion function.')
         points_to_modify = np.argsort(loss_deltas)[:k]
-
+        printer('Iteration {}: will modify points {}'.format(ix, points_to_modify))
         any_accepts = False
-        for i in points_to_modify:
-            cur_point = cur_design[i,:]
+        for point_ix, i in enumerate(points_to_modify):
+            i = np.asscalar(i)
+            cur_point = cur_design[i, :]
             # dump out the point we are modifying
             index_mask = np.arange(len(cur_design)) != i
             other_points = cur_design[index_mask, :]
 
             # proxy for the loss function, as a function of the point we are modifying
             def __partial_loss(d):
-                #print d.shape
                 d = d.reshape((1, other_points.shape[1]))
                 tmp_points = np.concatenate([other_points, d])
                 return loss_fn(tmp_points)
@@ -120,14 +132,19 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
             # A vectorized version of the above, because optimizers will often ask what is the
             # objective function value for a vector of different choices of point
             def __partial_loss_vectorized(points):
-                #print points.shape
                 ret = np.empty((points.shape[0], 1))
                 for i1 in xrange(points.shape[0]):
                     ret[i1, 0] = __partial_loss(points[i1, :])
                 return ret
 
             # construct the emulator
-            new_point = optimizer(__partial_loss_vectorized, cur_point, other_points)
+            printer('\tAbout to call optimizer', level=1)
+            try:
+                new_point = optimizer(__partial_loss_vectorized, cur_point, other_points)
+            except Exception as ex:
+                printer('{}: Optimization of {} failed with exception. Skipping this point. ({})'.format(ix, i, ex))
+                continue
+            printer('\tOptimizer finished', level=1)
 
             # now decide whether to _use_ that point.
             # In Overstall & Woods we have an acceptance probability for the proposal which is not included here.
@@ -136,15 +153,17 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
             new_loss = __partial_loss(new_point)
             accept = new_loss < cur_loss
             if accept:
-                if debug > 0:
-                    print ix, "Moved {} from {} to {} (new loss {:.2e} < {:.2e})".format(i, cur_point, new_point, new_loss, cur_loss)
+                printer( "{}: Moved {} from {} to {} (new loss {:.2e} < {:.2e})" \
+                    .format(point_ix, i, cur_point, new_point, new_loss, cur_loss)
+                         )
                 cur_design[i, :] = new_point
                 cur_loss = new_loss
                 any_accepts = True
             else:
                 # no-op
-                if debug > 0:
-                    print ix, "Rejected move of {} from {} to {}, (new loss {:.2e} > {:.2e})".format(i, cur_point, new_point, new_loss, cur_loss)
+                printer("{}: Rejected move of {} from {} to {}, (new loss {:.2e} > {:.2e})"\
+                        .format(point_ix, i, cur_point, new_point, new_loss, cur_loss)
+                        )
         if not any_accepts:
             n_rejects += 1
         else:
