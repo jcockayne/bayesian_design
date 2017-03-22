@@ -124,23 +124,25 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
             other_points = cur_design[index_mask, :]
 
             # proxy for the loss function, as a function of the point we are modifying
-            def __partial_loss(d):
+            def __partial_loss__(d):
                 d = d.reshape((1, other_points.shape[1]))
+                printer('Requested loss: {}'.format(d), 1)
                 tmp_points = np.concatenate([other_points, d])
+                printer("tmp points are: {}".format(tmp_points), 1)
                 return loss_fn(tmp_points)
 
             # A vectorized version of the above, because optimizers will often ask what is the
             # objective function value for a vector of different choices of point
-            def __partial_loss_vectorized(points):
+            def __partial_loss_vectorized__(points):
                 ret = np.empty((points.shape[0], 1))
                 for i1 in xrange(points.shape[0]):
-                    ret[i1, 0] = __partial_loss(points[i1, :])
+                    ret[i1, 0] = __partial_loss__(points[i1, :])
                 return ret
 
             # construct the emulator
             printer('\tAbout to call optimizer', level=1)
             try:
-                new_point = optimizer(__partial_loss_vectorized, cur_point, other_points)
+                new_point = optimizer(__partial_loss_vectorized__, cur_point, other_points, debug=debug)
             except Exception as ex:
                 printer('{}: Optimization of {} failed with exception. Skipping this point. ({})'.format(ix, i, ex))
                 continue
@@ -150,7 +152,7 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
             # In Overstall & Woods we have an acceptance probability for the proposal which is not included here.
             # This is because our loss function is exact (it is the trace of posterior covariance) so we can just look
             # at whether the new location is a better design than the old one, rather than looking at probabilities.
-            new_loss = __partial_loss(new_point)
+            new_loss = __partial_loss__(new_point)
             accept = new_loss < cur_loss
             if accept:
                 printer( "{}: Moved {} from {} to {} (new loss {:.2e} < {:.2e})" \
