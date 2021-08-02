@@ -108,7 +108,7 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
     cur_design = initial_design.copy()
     cur_loss = loss_fn(cur_design)
     n_rejects = 0
-    for ix in xrange(max_iter):
+    for ix in range(max_iter):
         loss_deltas = deletion_function(cur_design, loss_fn)
         loss_deltas = np.squeeze(loss_deltas)
         if len(loss_deltas.shape) > 1:
@@ -135,7 +135,7 @@ def ace(initial_design, k, max_iter, loss_fn, optimizer, terminate_rejects=5, de
             # objective function value for a vector of different choices of point
             def __partial_loss_vectorized__(points):
                 ret = np.empty((points.shape[0], 1))
-                for i1 in xrange(points.shape[0]):
+                for i1 in range(points.shape[0]):
                     ret[i1, 0] = __partial_loss__(points[i1, :])
                 return ret
 
